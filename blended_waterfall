@@ -1,0 +1,462 @@
+
+/********* BLENDED LAG FORECASTS *************/
+
+IF OBJECT_ID('TempDB..#temp1') IS NOT NULL DROP TABLE #temp1;
+
+select a.region
+	,a.prodord
+	,a.sap_material
+	,a.market
+	,a.affiliate
+	,a.channel
+	,a.invtype
+	,a.lag_buckets
+	,a.calendar_month
+	,a.lag_number
+	,DATEFROMPARTS(left(a.calendar_month,4), right(a.calendar_month, 2), 01) as month 
+	,sum(total_sellin) as total_sellin
+	,sum(total_sellin_val_USD) as total_sellin_val
+	,sum(total_sellthru) as total_sellthru	
+	,sum(total_sellthru_val_USD) as total_sellthru_val
+	, case 
+		  when a.region = '1' and a.channel = '52' then sum(a.[total_sellthru]) 
+		  when a.region = '1' and a.channel = '90' then sum(a.[total_sellthru])
+		  when a.region = '7' and a.channel = '52' then sum(a.[total_sellthru]) 
+		  when a.region = '7' and a.channel = '90' then sum(a.[total_sellthru])  
+		  when a.region = '4' and a.channel = '52' then sum(a.[total_sellthru]) 
+		  when a.region = '4' and a.channel = '90' then sum(a.[total_sellthru]) 
+		  when a.region = '2' and a.channel = '52' then sum(a.[total_sellthru]) 
+		  when a.region = '2' and a.channel = '90' then sum(a.[total_sellthru]) 
+		  else sum(a.[total_sellin])
+		  end as blended 
+		  , case 
+		  when a.region = '1' and a.channel = '52' then sum(a.[total_sellthru_val_USD]) 
+		  when a.region = '1' and a.channel = '90' then sum(a.[total_sellthru_val_USD]) 
+		  when a.region = '7' and a.channel = '52' then sum(a.[total_sellthru_val_USD]) 
+		  when a.region = '7' and a.channel = '90' then sum(a.[total_sellthru_val_USD]) 
+		  when a.region = '4' and a.channel = '52' then sum(a.[total_sellthru_val_USD]) 
+		  when a.region = '4' and a.channel = '90' then sum(a.[total_sellthru_val_USD]) 
+		  when a.region = '2' and a.channel = '52' then sum(a.[total_sellthru_val_USD]) 
+		  when a.region = '2' and a.channel = '90' then sum(a.[total_sellthru_val_USD]) 
+		  else sum(a.[total_sellin_val_USD])
+		  end as blended_val
+into #temp1
+from
+(
+	SELECT c.[region]
+		  ,a.[prodord]
+		  ,a.[sap_material]
+		  ,a.[market]
+		  ,a.[affiliate]
+		  ,a.[invtype]
+		  ,a.[channel]
+		  ,a.[lag_buckets]
+		  ,a.[calendar_month]
+		  ,a.[lag_number]
+		  ,a.[currency]
+		  ,b.rate
+		  ,sum([total_sellin]) as total_sellin
+		  ,cast(round(total_sellin_val * ISNULL(b.rate, 1), 0) as bigint) as total_sellin_val_USD
+		  ,sum([total_sellthru]) as total_sellthru 
+		  ,cast(round(total_sellthru_val * ISNULL(b.rate, 1), 0) as bigint) as total_sellthru_val_USD
+	  FROM [SC_PLN_DS].[JANUS_FORECAST].[WATERFALL_FY24] a
+	  LEFT JOIN [SC_PLN_DS].[JANUS_MASTER].[CURRENCY_RATE] b
+	  on a.currency = b.from_currency
+	  and a.calendar_month >= b.valid_from
+	  and a.calendar_month <= b.valid_to
+	  LEFT JOIN [SC_PLN_DS].[JANUS_MASTER].[MARKET_REGION] c
+	  on a.market = c.market
+	  --WHERE prodord = '7T5R01' and a.market in ('USA','CAN')
+	  group by prodord, affiliate, sap_material, c.region, invtype, a.market, channel, lag_buckets, calendar_month, lag_number, currency, B.rate,total_sellin_val, total_sellthru_val	 
+  ) a 
+  group by a.prodord, a.sap_material, a.calendar_month, a.channel, a.lag_buckets, a.lag_number, a.market, a.affiliate, a.invtype, a.region
+
+
+select * from #temp1
+  /********* BLENDED HISTORY  *************/
+
+IF OBJECT_ID('TempDB..#temp2') IS NOT NULL DROP TABLE #temp2;
+
+SELECT a.[region]
+	  ,a.[affiliate]
+      ,a.[market]
+      ,a.[channel]
+      ,a.[sku_10d]
+	  ,max(b.[invtype]) as invtype
+      ,left(a.[sku_10d], 6) as prodord
+      ,max(b.[division]) as division
+	  ,right(a.month,6) as month
+	  ,DATEFROMPARTS(substring(a.month,2,4), right(a.month, 2), 01) as calmonth
+      ,sum(a.[sell_in]) as shipment
+      ,sum(a.[sell_thru]) as sell_thru
+      ,sum(a.[sellin_val]) as shipment_val
+      ,sum(a.[sellthru_val]) as sell_thru_val
+	  , case 
+		  when a.region = '1' and a.channel = '52' then sum(a.[sell_thru]) 
+		  when a.region = '1' and a.channel = '90' then sum(a.[sell_thru]) 
+		  when a.region = '7' and a.channel = '52' then sum(a.[sell_thru]) 
+		  when a.region = '7' and a.channel = '90' then sum(a.[sell_thru]) 
+		  when a.region = '4' and a.channel = '52' then sum(a.[sell_thru]) 
+		  when a.region = '4' and a.channel = '90' then sum(a.[sell_thru]) 
+		  when a.region = '2' and a.channel = '52' then sum(a.[sell_thru]) 
+		  when a.region = '2' and a.channel = '90' then sum(a.[sell_thru]) 
+		  else sum(a.[sell_in])
+	  end as blended 
+	  , case 
+		  when a.region = '1' and a.channel = '52' then sum(a.[sellthru_val]) 
+		  when a.region = '1' and a.channel = '90' then sum(a.[sellthru_val]) 
+		  when a.region = '7' and a.channel = '52' then sum(a.[sellthru_val]) 
+		  when a.region = '7' and a.channel = '90' then sum(a.[sellthru_val]) 
+		  when a.region = '4' and a.channel = '52' then sum(a.[sellthru_val]) 
+		  when a.region = '4' and a.channel = '90' then sum(a.[sellthru_val]) 
+		  when a.region = '2' and a.channel = '52' then sum(a.[sellthru_val]) 
+		  when a.region = '2' and a.channel = '90' then sum(a.[sellthru_val]) 
+		  else sum(a.[sellin_val])
+	  end as blended_val
+	  into #temp2
+  FROM [SC_PLN_DS].[JANUS_ORDER].[AGG_SHIPMENT_10D] a
+  LEFT JOIN [SC_PLN_DS].[JANUS_ORDER].[AGG_SHIPMENT] b 
+  on a.market = b.MARKET 
+  and a.affiliate = b.affiliate
+  and left(a.[sku_10d], 6) = b.prodord 
+  and a.channel = b.channel 
+  and a.month = b.month
+ -- where prodord = '7T5R01' and a.region = '4'
+  group by a.affiliate, a.market, a.channel, b.invtype, b.division, a.month, a.region, a.sku_10d
+
+
+--INSERT INTO [SC_PLN_DS].[SLD].[BLENDED_HIST]
+--select region
+--,sku_10d --as material
+--,prodord
+--,affiliate
+--,market
+--,channel
+--,invtype
+--,month
+--,blended
+--,blended_val
+--,shipment
+--,shipment_val
+--,sell_thru
+--,sell_thru_val
+--FROM #TEMP2 ; 
+
+--INSERT INTO [SC_PLN_DS].[SLD].[BLENDED_LAG]
+--select LEFT(region,1)
+--,LEFT(sap_material, 10) --as material
+--,LEFT(prodord, 6)
+--,LEFT(affiliate, 4)
+--,LEFT(market, 3)
+--,LEFT(channel, 2)
+--,LEFT(invtype, 2)
+--,LEFT(lag_buckets, 6)
+--,LEFT(calendar_month, 6) 
+--,blended
+--,blended_val
+--,total_sellin
+--,total_sellin_val
+--,total_sellthru
+--,total_sellthru_val
+--FROM #TEMP1 ; 
+
+
+select count(*) as count from [SC_PLN_DS].[SLD].[BLENDED_LAG]
+select TOP 10 *  from #temp1
+
+
+
+
+/****************** create cursor to parse through cdps and add to the blended table ******************/
+ 
+declare @cdp1 varchar(6) ; 
+IF OBJECT_ID('TempDB..#temp3') IS NOT NULL DROP TABLE #temp3;
+  
+
+
+declare cdp_iteration2 cursor for
+select distinct cdp_month 
+from [SC_PLN_DS].[SLD].[BLENDED_LAG] 
+where cdp_month in ('202312', '202311', '202310', '202309', '202308', '202307') 
+order by cdp_month asc
+
+open cdp_iteration2 ;
+  
+fetch next from cdp_iteration2 into @cdp1
+
+while @@FETCH_STATUS = 0
+BEGIN 
+insert into #temp3
+	select a.* 
+	from 
+		(select region
+		,material
+		,prodord 
+		,affiliate
+		,market
+		,channel
+		,invtype
+		,cdp_month-- as cdp_month
+		,calendar_month
+		,blended
+		,blended_val
+		,shipment
+		,shipment_val
+		,sellthru
+		,sellthru_val
+		from [SC_PLN_DS].[SLD].[BLENDED_LAG] 
+		where cdp_month = @cdp1
+  
+		UNION ALL 
+		select region
+		,material
+		,prodord
+		,affiliate
+		,market
+		,channel
+		,invtype
+		,@cdp1 as cdp_month 
+		,calendar_month as calendar_month 
+		,blended 
+		,blended_val
+		,shipment
+		,shipment_val
+		,sellthru
+		,sellthru_val 
+		from [SC_PLN_DS].[SLD].[BLENDED_HIST] 
+		where calendar_month < @cdp1
+		) a 
+
+	fetch next from cdp_iteration2 into @cdp1
+END 
+
+close cdp_iteration2;
+deallocate cdp_iteration2 ; 
+
+
+--INSERT INTO [SC_PLN_DS].[SLD].[MIDAS_RAW]
+--SELECT * FROM #TEMP3
+
+IF OBJECT_ID('TempDB..#future_kpi') IS NOT NULL DROP TABLE #future_kpi;
+
+declare @maxmonth varchar(7); 
+set @maxmonth = '_202405'; 
+
+select * 
+into #future_kpi 
+from [SC_PLN_DS].[JANUS_MASTER].[KPI_AREA_MONTH] 
+where month = @maxmonth
+
+select top 10 * from #future_kpi
+
+IF OBJECT_ID('TempDB..#filter_EMEA') IS NOT NULL DROP TABLE #filter_EMEA;
+
+
+select *
+into #filter_EMEA 
+from [SC_PLN_DS].[JANUS_MASTER].[AFFILIATE_GROUP]
+where aff_group <> 'GRAVITY'
+select  * from #filter_EMEA
+
+----------------------------------start building the table -------------------------------------------
+IF OBJECT_ID('TempDB..#temp4') IS NOT NULL DROP TABLE #temp4;
+
+select a.*
+	,COALESCE(COALESCE(k2.kpi_area,k1.kpi_area), k3.kpi_area) as kpi_area 
+	,coalesce(c.new_basic, '') as new_basic  
+	,coalesce(d.DEMAND_TYPE, '') as demand_type
+	,coalesce(d.PLC, '') as plc 
+	,coalesce(f.LOCAL_ABCD, '') as local_abcd
+	,coalesce(max(g.aff_group),'') as aff_group
+	,coalesce(max(j.PROGRAM_ID),'') as program_id
+	,coalesce(max(j.tlm_desc), '') as prog_name
+	,coalesce(max(k.major_inventory_id), '') as major_inventory_type
+	,coalesce(max(k.major_inventory_description), '') as major_inventory_description
+	,coalesce(k.SET_INDICATOR, '') as set_indicator
+	,coalesce(k.sub_inventory_description, '') as sub_inventory_description
+	,coalesce(k.inventory_description, '') as inventory_description
+	,coalesce(l.prat1, '') as global_sets
+	,coalesce(m.prat5, '') as local_sets
+,case 
+	when a.calendar_month >= '202007' and a.calendar_month <= '202106' then 'FY21'
+	when a.calendar_month >= '202107' and a.calendar_month <= '202206' then 'FY22'
+	when a.calendar_month >= '202207' and a.calendar_month <= '202306' then 'FY23'
+	when a.calendar_month >= '202307' and a.calendar_month <= '202406' then 'FY24'
+	when a.calendar_month >= '202407' and a.calendar_month <= '202506' then 'FY25'
+	when a.calendar_month >= '202507' and a.calendar_month <= '202606' then 'FY26'
+	end as fiscal_year 
+,case 
+	when RIGHT(a.calendar_month,2) >= '07' and RIGHT(a.calendar_month,2) <= '12' then 'H1'
+	when RIGHT(a.calendar_month,2) >= '01' and RIGHT(a.calendar_month,2) <= '06' then 'H2'
+	end as fiscal_half
+,case 
+	when RIGHT(a.calendar_month,2) >= '07' and RIGHT(a.calendar_month,2) <= '09' then 'Q1'
+	when RIGHT(a.calendar_month,2) >= '10' and RIGHT(a.calendar_month,2) <= '12' then 'Q2'
+	when RIGHT(a.calendar_month,2) >= '01' and RIGHT(a.calendar_month,2) <= '03' then 'Q3'
+	when RIGHT(a.calendar_month,2) >= '04' and RIGHT(a.calendar_month,2) <= '06' then 'Q4'
+	end as fiscal_quarter
+,case 
+	when a.region <> 'NA' then 'INT' 
+	ELSE 'NA' 
+	end as international	
+,case 
+	when a.affiliate = 'CHN' then 'square'
+	when a.affiliate = 'TRKOR' then 'square'
+	when a.affiliate = 'TRCN' then 'square'
+	when a.affiliate = 'TRHN' then 'square'
+	ELSE 'other' 
+	end as square
+,case 
+	when a.affiliate = 'CHN' then 'gravity'
+	when a.affiliate = 'TRKOR' then 'gravity'
+	when a.affiliate = 'TRCN' then 'gravity'
+	when a.affiliate = 'TRHN' then 'gravity'
+	when a.affiliate = 'THMT' then 'gravity'
+	ELSE 'other' 
+	end as gravity
+INTO #temp4
+from 
+(
+select a.region as region_id
+	,case 
+		when a.region = '1' then 'AP' 
+		when a.region = '2' then 'EM'
+		when a.region = '3' then 'LA'
+		when a.region = '4' then 'NA'
+		when a.region = '5' then 'TR'
+		when a.region = '6' then 'UK'
+		when a.region = '7' then 'AP'
+		when a.region = '8' then 'CHN'
+	end as region
+	,a.prodord
+	,a.material
+	,a.affiliate
+	,a.market
+	,a.invtype as business_type
+	,a.channel as inv_type
+	,a.cdp_month
+	,a.calendar_month
+	,a.blended
+	,a.blended_val
+	,a.shipment
+	,a.shipment_val
+	,a.sellthru
+	,a.sellthru_val
+	,left(a.prodord,4) as prod_family
+	,max(b.prodord_desc) as prodord_desc
+	,max(b.division) as division
+	,max(b.division_desc) as division_desc
+	,max(b.brand) as brand
+	,max(b.brand_desc) as brand_desc
+    ,max(b.[prodline_desc]) as prodline
+    ,max(b.[subprodline_desc]) as subprodline
+    ,max(b.[majorcategory_desc]) as majorcategory
+    ,max(b.[category_desc]) as category
+    ,max(b.[subcategory_desc]) as subcategory
+	,max(b.majinvtype) as majinvtype
+	,max(b.[innovation_type]) as innovation_type
+	,max(b.[GLOBAL_ABCD]) as global_abcd
+	from 
+		(
+		SELECT * FROM [SC_PLN_DS].[SLD].[MIDAS_RAW] a 
+		--WHERE PRODORD = '7T5R01' AND cdp_month = '202404'
+		) a 
+	left join [SC_PLN_DS].[JANUS_MASTER].[MATERIAL] b 
+	on a.material = b.material
+group by a.region
+	,a.prodord
+	,a.material
+	,a.affiliate
+	,a.market
+	,a.invtype
+	,a.channel
+	,a.cdp_month
+	,a.calendar_month
+	,a.blended
+	,a.blended_val
+	,a.shipment
+	,a.shipment_val
+	,a.sellthru
+	,a.sellthru_val
+) a 
+LEFT JOIN [SC_PLN_DS].[JANUS_MASTER].[KPI_AREA_MONTH] k1
+		ON a.brand = k1.brand AND a.market = k1.market AND a.calendar_month = right(k1.month,6)
+LEFT JOIN [SC_PLN_DS].[JANUS_MASTER].[KPI_AREA_CHANNEL] k2
+		ON a.brand = k2.brand AND a.market = k2.market AND a.business_type = k2.channel
+			AND a.calendar_month >= right(k2.valid_from,6) AND a.calendar_month <= right(k2.valid_to,6)
+LEFT JOIN #future_kpi k3
+		ON a.brand = k3.brand AND a.market = k3.market 
+
+left join [SC_PLN_DS].[JANUS_MASTER].[PBI_NEW_BASIC_MARKET] c
+	on a.prodord = c.prodord AND a.market = c.market and a.calendar_month = right(c.month, 6)
+
+left join [SC_PLN_DS].[JANUS_MASTER].[PBI_TIME_PHASED_DEMAND_TYPE] d
+	on a.prodord = d.prodord and a.market = d.market and a.calendar_month = right(d.month, 6)
+
+left join [SC_PLN_DS].[DP_ABCD].[DP_ABCD_6D_MKT] f
+	on a.prodord = f.SKU_6D and a.market = f.MARKET
+
+left join #filter_EMEA g
+	on a.affiliate = g.affiliate
+
+left join [SC_PLN_DS].[JANUS_MASTER].[TLM_SKU] j
+	on a.prodord = j.prodord
+
+left join [SC_PLN_DS].[MASTER_DATA].[ITEM_SAP_CATEGORIZATION] k
+	on a.material = k.ITEM_ID
+
+left join  [SC_PLN_DS].[MASTER_DATA].[MVKE_PRAT1] l
+  on a.material = l.[MATNR]
+  
+left join [SC_PLN_DS].[MASTER_DATA].[LOCAL_ACS_SET_IND] m
+  on a.material = m.[MATNR]
+
+group by a.region_id
+,a.region
+,a.material
+,a.prodord
+,a.affiliate
+,a.market
+,a.business_type
+,a.inv_type
+,a.cdp_month
+,a.calendar_month
+,a.blended
+,a.blended_val
+,a.shipment
+,a.shipment_val
+,a.sellthru
+,a.sellthru_val
+,a.prod_family
+,a.prodord_desc
+,a.division
+,a.division_desc
+,a.brand
+,a.brand_desc
+,a.prodline
+,a.subprodline
+,a.majorcategory
+,a.category
+,a.subcategory
+,a.majinvtype
+,a.innovation_type
+,a.global_abcd
+,k1.kpi_area
+,k2.kpi_area
+,k3.kpi_area
+,c.new_basic 
+,d.DEMAND_TYPE 
+,d.PLC 
+,f.LOCAL_ABCD
+,k.MAJOR_INVENTORY_ID
+,k.MAJOR_INVENTORY_DESCRIPTION
+,k.set_indicator
+,k.SUB_INVENTORY_DESCRIPTION
+,k.INVENTORY_DESCRIPTION
+,l.PRAT1
+,m.PRAT5
+	
+
+--insert into [SLD].[MIDAS]
+--select * 
+--from #temp4
